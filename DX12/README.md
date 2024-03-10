@@ -12,7 +12,7 @@ This is the DirectX 12 tutorial sample code from the KyeoungJu blog [Dev_Program
 - GPU: Nvidia 950M
 - 작성 시작일: 2024.03.01 ~
 
-#샘플(Sample)
+# 샘플(Sample)
 
 샘플의 숫자는 순서 이름은 해당되는 파트의 주요 핵심단어 입니다.  
 자세한 내용은 블로그에서 설명하겠습니다.  
@@ -53,8 +53,12 @@ have written code to draw a square by extending the code for drawing a triangle 
 Add a checkered pattern to the vertex triangle code using uv coordinates.  
 
 **추가) TextureRectangle(DirectXTex):**
-위의 코드를 확장하여 DirectXTex를 사용하여 png 텍쳐를 입혔습니다.  
+위의 코드를 확장하여 DirectXTex를 사용하여 png 텍스쳐를 입혔습니다.  
 Extend the above code to apply a png texture using DirectXTex.  
+
+**추가) TextureRectangle(WIC):**
+위의 코드를 확장하여 WIC를 사용하여 png 텍스쳐를 입혔습니다.  
+Extend the above code to apply a png texture using WIC.
 
 
 

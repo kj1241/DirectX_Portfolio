@@ -15,10 +15,14 @@ The repository is created irregularly.
 - GPU: Nvidia 950M
 
 ## [DIrectX 9]()
-  
-  
+~~추후 공개~~
+> **참조)** 
+  마이크로소프트 샘플 브라우져, 
+  해골책, 
+  용책  
+    
 ## [DIrectX 11]()
-  
+~~ 추후 공개~~
   
 ## [DIrectX 12](DX12)
 
@@ -28,3 +32,6 @@ This code was created using DirectX12.
 **Tutorial:**
 DirectX12 엔진을 제작하기 위해서 연습하고 작성한 코드들입니다.  
 These are codes practiced and written to produce a DirectX12 engine.  
+
+> **참조)**
+  [마이크로소프트 샘플](https://github.com/microsoft/DirectX-Graphics-Samples)

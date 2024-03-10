@@ -133,6 +133,8 @@ void DirectX12Pipline::OnDestroy()
 		pD3d12Device->Release();
 		pD3d12Device = nullptr;
 	}
+
+	delete imageData;
 }
 
 //생성자에서 초기값을 할당해줄수 없는부분들.(순서에 의해서)
@@ -674,11 +676,13 @@ void DirectX12Pipline::LoadAssets()
 	/// 텍스쳐 만들기
 	/// </summary>
 	ID3D12Resource* pTextureUploadHeap;
+
 	{
-		TexMetadata metadata = {};
-		ScratchImage scratchImg = {};
-		result = LoadFromWICFile(L"../img/background.png", WIC_FLAGS_NONE, &metadata, scratchImg);
-		auto img = scratchImg.GetImage(0, 0, 0);
+		//TexMetadata metadata = {};
+		//ScratchImage scratchImg = {};
+		//result = LoadFromWICFile(L"../img/background.png", WIC_FLAGS_NONE, &metadata, scratchImg);
+		//auto img = scratchImg.GetImage(0, 0, 0);
+
 
 		D3D12_HEAP_PROPERTIES prop = {};
 		prop.Type = D3D12_HEAP_TYPE_CUSTOM;  //D3D12_HEAP_TYPE_UPLOAD;
@@ -701,19 +705,21 @@ void DirectX12Pipline::LoadAssets()
 		////desc.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
 		//desc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
-		desc.Dimension = static_cast<D3D12_RESOURCE_DIMENSION>(metadata.dimension);
-		desc.Alignment = 0;
-		desc.Width = static_cast<UINT>(metadata.width);
-		desc.Height = static_cast<UINT>(metadata.height);
-		desc.DepthOrArraySize = static_cast<uint16_t>(metadata.arraySize);
-		desc.MipLevels = static_cast<uint16_t>(metadata.mipLevels);
-		desc.Format = metadata.format;//DXGI_FORMAT_UNKNOWN;
-		desc.SampleDesc.Count = 1;
-		desc.SampleDesc.Quality = 0;
-		desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
-		desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+		//desc.Dimension = static_cast<D3D12_RESOURCE_DIMENSION>(metadata.dimension);
+		//desc.Alignment = 0;
+		//desc.Width = static_cast<UINT>(metadata.width);
+		//desc.Height = static_cast<UINT>(metadata.height);
+		//desc.DepthOrArraySize = static_cast<uint16_t>(metadata.arraySize);
+		//desc.MipLevels = static_cast<uint16_t>(metadata.mipLevels);
+		//desc.Format = metadata.format;//DXGI_FORMAT_UNKNOWN;
+		//desc.SampleDesc.Count = 1;
+		//desc.SampleDesc.Quality = 0;
+		//desc.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+		//desc.Flags = D3D12_RESOURCE_FLAG_NONE;
 
 
+		int imageBytesPerRow;
+		int imageSize = LoadImageDataFromFile(&imageData, desc, L"../img/background.png", imageBytesPerRow);
 
 		result = pD3d12Device->CreateCommittedResource(
 			&prop,
@@ -726,12 +732,12 @@ void DirectX12Pipline::LoadAssets()
 			return;
 
 
-		result = pTexture->WriteToSubresource(0,
+		/*result = pTexture->WriteToSubresource(0,
 			nullptr,
 			img->pixels,
 			static_cast<UINT>(img->rowPitch),
 			static_cast<UINT>(img->slicePitch)
-		);
+		);*/
 
 		prop.Type = D3D12_HEAP_TYPE_UPLOAD;
 		prop.CPUPageProperty = D3D12_CPU_PAGE_PROPERTY_UNKNOWN;
@@ -768,11 +774,11 @@ void DirectX12Pipline::LoadAssets()
 		//std::vector<UINT8> texture = GenerateTextureData();
 
 
-	/*	D3D12_SUBRESOURCE_DATA textureData = {};
-		textureData.pData = &texture[0];
-		textureData.RowPitch = TextureWidth * TexturePixelSize;
-		textureData.SlicePitch = textureData.RowPitch * TextureHeight;
-		UpdateSubresources(pCommandList, pTexture, pTextureUploadHeap, 0, 0, 1, &textureData);*/
+		D3D12_SUBRESOURCE_DATA textureData = {};
+		textureData.pData = &imageData[0];
+		textureData.RowPitch = imageBytesPerRow;  //TextureWidth * TexturePixelSize;
+		textureData.SlicePitch = imageBytesPerRow * desc.Height; //textureData.RowPitch * TextureHeight;
+		UpdateSubresources(pCommandList, pTexture, pTextureUploadHeap, 0, 0, 1, &textureData);
 
 		D3D12_RESOURCE_BARRIER BarrierDesc = {};
 		BarrierDesc.Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
@@ -799,6 +805,7 @@ void DirectX12Pipline::LoadAssets()
 
 	ID3D12CommandList* ppCommandLists[] ={ pCommandList };
 	pCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+
 
 	pTextureUploadHeap->Release();
 	pTextureUploadHeap = nullptr;
@@ -1065,4 +1072,303 @@ void DirectX12Pipline::GetAssetsPath(WCHAR* path, UINT pathSize)
 	{
 		*(lastSlash + 1) = L'\0';
 	}
+}
+
+int DirectX12Pipline::LoadImageDataFromFile(BYTE** imageData, D3D12_RESOURCE_DESC& resourceDescription, LPCWSTR filename, int& bytesPerRow)
+{
+	int hr;
+	IWICImagingFactory* wicFactory=nullptr; 	//디코더와 프레임을 생성하려면 인스턴스 필요
+	
+	//로드하는 이미지마다 다르기 때문에 재설정
+	IWICBitmapDecoder* wicDecoder = nullptr;
+	IWICBitmapFrameDecode* wicFrame = nullptr;
+	IWICFormatConverter* wicConverter = nullptr;
+
+	bool imageConverted = false;
+
+	if (wicFactory == nullptr)
+	{
+		CoInitialize(nullptr);  //초기화
+
+		// WIC 팩토리 생성
+		hr = CoCreateInstance(
+			CLSID_WICImagingFactory,
+			nullptr,
+			CLSCTX_INPROC_SERVER,
+			__uuidof(*wicFactory), (void**)&wicFactory);
+		if (hr < 0)
+			return 0;
+
+		hr = wicFactory->CreateFormatConverter(&wicConverter);
+		if (hr < 0)
+			return 0;
+	}
+
+	//이미지 디코더 로드
+	hr = wicFactory->CreateDecoderFromFilename(
+		filename,							//이미지 파일 이름
+		nullptr,                            //공급업체 ID (이거 바이너리 해더파일에 있는데 보통은 안쓰기 때문에 nullptr 설정)
+		GENERIC_READ,						// 어떻게 사용할 것인지
+		WICDecodeMetadataCacheOnLoad,		// 임의의 시간때 사용하는 것보다 지그 즉시 메타데이터를 캐쉬
+		&wicDecoder							// 생성될 WIC 디코더
+	);
+	if (hr < 0)
+		return 0;
+
+	// 디코더 이미지 가저오기 (프레임이 디코딩됨)
+	hr = wicDecoder->GetFrame(0, &wicFrame);
+	if (hr < 0)
+		return 0;
+
+	// 이미지의 WIC 픽셀 형식을 가저옴
+	WICPixelFormatGUID pixelFormat;
+	hr = wicFrame->GetPixelFormat(&pixelFormat);
+	if (hr < 0)
+		return 0;
+
+	// 이미지의 크기를 가저옴
+	UINT textureWidth, textureHeight;
+	hr = wicFrame->GetSize(&textureWidth, &textureHeight);
+	if (hr < 0)
+		return 0;
+
+	//sRGB 유형에 대해서 처리하지 않음으로 필요하면 직접 다시 만들어야됨
+
+	// WIC 픽셀 형식을 dxgi 픽셀형식으로 변환
+	DXGI_FORMAT dxgiFormat = GetDXGIFormatFromWICFormat(pixelFormat);
+
+	// 이미지 형식이 지원되는 dixg형식이아니면 변환 시도
+	if (dxgiFormat == DXGI_FORMAT_UNKNOWN)
+	{
+		// 현재 이미지 형식에서 dxgi 호환 WIC 형식을 가져옵
+		WICPixelFormatGUID convertToPixelFormat = GetConvertToWICFormat(pixelFormat);
+		if (convertToPixelFormat == GUID_WICPixelFormatDontCare) // dxgi 호환 형식이 발견되지 않은 경우 반환
+			return 0;
+
+		dxgiFormat = GetDXGIFormatFromWICFormat(convertToPixelFormat);	// dxgi 형식 설정
+
+		// dxgi 호환 형식으로 변환할수 있는지 확인
+		BOOL canConvert = FALSE;
+		hr = wicConverter->CanConvert(pixelFormat, convertToPixelFormat, &canConvert);
+		if (hr < 0 || !canConvert) 
+			return 0;
+
+		// 변환을 수행합니다(wicConverter에는 변환된 이미지가 포함)
+		hr = wicConverter->Initialize(wicFrame, convertToPixelFormat, WICBitmapDitherTypeErrorDiffusion, 0, 0, WICBitmapPaletteTypeCustom);
+		if (hr < 0)
+			return 0;
+
+		// wicConverter에서 이미지 데이터를 가져오는 방법을 알기 위해서 플래그 전환
+		// 아니면 wicFrame에서 가저와야됨
+		imageConverted = true;
+	}
+
+	int bitsPerPixel = GetDXGIFormatBitsPerPixel(dxgiFormat); // 픽셀당 비트수
+	bytesPerRow = (textureWidth * bitsPerPixel) / 8; //이미지 데이터의 각 행에 있는 바이트 수
+	int imageSize = bytesPerRow * textureHeight; // 총 이미지 크기
+
+	//원시 이미지 데이터에 충분한 메모리를 할당하고 해당 메모리를 가리키도록 imageData를 설정
+	*imageData = new BYTE[imageSize];
+
+	// 	새로 할당된 메모리(imageData)에 원시 이미지 데이터를 복사(디코딩)
+	if (imageConverted)
+	{
+		//이미지 형식을 변환해야 하는 경우 wic 변환기에는 변환된 이미지가 포함
+		hr = wicConverter->CopyPixels(0, bytesPerRow, imageSize, *imageData);
+		if (hr < 0)
+			return 0;
+	}
+	else
+	{
+		//변환할 필요가 없습니다.wic 프레임에서 데이터를 복사하기만 하면됨
+		hr = wicFrame->CopyPixels(0, bytesPerRow, imageSize, *imageData);
+		if (hr < 0)
+			return 0;
+	}
+
+	resourceDescription = {};
+	resourceDescription.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+	resourceDescription.Alignment = 0; // 0, 4KB, 64KB 또는 4MB일 수 있습니다. 0은 런타임이 64KB와 4MB(멀티 샘플링 텍스처의 경우 4MB) 사이에서 결정
+	resourceDescription.Width = textureWidth; 
+	resourceDescription.Height = textureHeight; 
+	resourceDescription.DepthOrArraySize = 1; //3D 이미지인 경우 3D 이미지의 깊이입니다.그렇지 않으면 1D 또는 2D 텍스처 배열(이미지가 하나뿐이므로 1로 설정)
+	resourceDescription.MipLevels = 1; //밉맵 수. 이 텍스처에 대한 밉맵을 생성하지 않으므로 레벨이 하나만 있음
+	resourceDescription.Format = dxgiFormat; //이것은 이미지의 dxgi 형식입니다(픽셀 형식).
+	resourceDescription.SampleDesc.Count = 1; // 이것은 픽셀당 샘플 수입니다. 우리는 단지 1개의 샘플
+	resourceDescription.SampleDesc.Quality = 0; // 샘플의 품질 수준입니다. 높을수록 품질은 좋아지지만 성능떨어짐
+	resourceDescription.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN; //픽셀의 배열입니다.알 수 없음으로 설정하면 알아서 가장 효율적인 것을 선택해줌
+	resourceDescription.Flags = D3D12_RESOURCE_FLAG_NONE; // 플레그 없음
+
+	// 이미지의 크기를 반환합니다. 작업이 끝나면 이미지를 삭제하는 것을 잊지 마세요
+	wicDecoder->Release();
+	wicDecoder = nullptr;
+
+	wicFrame->Release();
+	wicFrame = nullptr;
+
+	wicConverter->Release();
+	wicConverter = nullptr;
+
+	return imageSize;
+}
+
+//wic 형식과 동등한 dxgi 형식
+DXGI_FORMAT DirectX12Pipline::GetDXGIFormatFromWICFormat(WICPixelFormatGUID& wicFormatGUID)
+{
+	if (wicFormatGUID == GUID_WICPixelFormat128bppRGBAFloat) 
+		return DXGI_FORMAT_R32G32B32A32_FLOAT;
+	else if (wicFormatGUID == GUID_WICPixelFormat64bppRGBAHalf) 
+		return DXGI_FORMAT_R16G16B16A16_FLOAT;
+	else if (wicFormatGUID == GUID_WICPixelFormat64bppRGBA) 
+		return DXGI_FORMAT_R16G16B16A16_UNORM;
+	else if (wicFormatGUID == GUID_WICPixelFormat32bppRGBA) 
+		return DXGI_FORMAT_R8G8B8A8_UNORM;
+	else if (wicFormatGUID == GUID_WICPixelFormat32bppBGRA) 
+		return DXGI_FORMAT_B8G8R8A8_UNORM;
+	else if (wicFormatGUID == GUID_WICPixelFormat32bppBGR) 
+		return DXGI_FORMAT_B8G8R8X8_UNORM;
+	else if (wicFormatGUID == GUID_WICPixelFormat32bppRGBA1010102XR) 
+		return DXGI_FORMAT_R10G10B10_XR_BIAS_A2_UNORM;
+
+	else if (wicFormatGUID == GUID_WICPixelFormat32bppRGBA1010102)
+		return DXGI_FORMAT_R10G10B10A2_UNORM;
+	else if (wicFormatGUID == GUID_WICPixelFormat16bppBGRA5551)
+		return DXGI_FORMAT_B5G5R5A1_UNORM;
+	else if (wicFormatGUID == GUID_WICPixelFormat16bppBGR565)
+		return DXGI_FORMAT_B5G6R5_UNORM;
+	else if (wicFormatGUID == GUID_WICPixelFormat32bppGrayFloat)
+		return DXGI_FORMAT_R32_FLOAT;
+	else if (wicFormatGUID == GUID_WICPixelFormat16bppGrayHalf) 
+		return DXGI_FORMAT_R16_FLOAT;
+	else if (wicFormatGUID == GUID_WICPixelFormat16bppGray)
+		return DXGI_FORMAT_R16_UNORM;
+	else if (wicFormatGUID == GUID_WICPixelFormat8bppGray) 
+		return DXGI_FORMAT_R8_UNORM;
+	else if (wicFormatGUID == GUID_WICPixelFormat8bppAlpha) 
+		return DXGI_FORMAT_A8_UNORM;
+
+	else return DXGI_FORMAT_UNKNOWN;
+}
+
+//다른 WIC 형식에서 dxgi 호환 WIC 형식을 가져옴.
+WICPixelFormatGUID DirectX12Pipline::GetConvertToWICFormat(WICPixelFormatGUID& wicFormatGUID)
+{
+	if (wicFormatGUID == GUID_WICPixelFormatBlackWhite) 
+		return GUID_WICPixelFormat8bppGray;
+	else if (wicFormatGUID == GUID_WICPixelFormat1bppIndexed) 
+		return GUID_WICPixelFormat32bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat2bppIndexed) 
+		return GUID_WICPixelFormat32bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat4bppIndexed) 
+		return GUID_WICPixelFormat32bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat8bppIndexed) 
+		return GUID_WICPixelFormat32bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat2bppGray) 
+		return GUID_WICPixelFormat8bppGray;
+	else if (wicFormatGUID == GUID_WICPixelFormat4bppGray) 
+		return GUID_WICPixelFormat8bppGray;
+	else if (wicFormatGUID == GUID_WICPixelFormat16bppGrayFixedPoint) 
+		return GUID_WICPixelFormat16bppGrayHalf;
+	else if (wicFormatGUID == GUID_WICPixelFormat32bppGrayFixedPoint)
+		return GUID_WICPixelFormat32bppGrayFloat;
+	else if (wicFormatGUID == GUID_WICPixelFormat16bppBGR555)
+		return GUID_WICPixelFormat16bppBGRA5551;
+	else if (wicFormatGUID == GUID_WICPixelFormat32bppBGR101010)
+		return GUID_WICPixelFormat32bppRGBA1010102;
+	else if (wicFormatGUID == GUID_WICPixelFormat24bppBGR) 
+		return GUID_WICPixelFormat32bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat24bppRGB) 
+		return GUID_WICPixelFormat32bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat32bppPBGRA) 
+		return GUID_WICPixelFormat32bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat32bppPRGBA)
+		return GUID_WICPixelFormat32bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat48bppRGB) 
+		return GUID_WICPixelFormat64bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat48bppBGR) 
+		return GUID_WICPixelFormat64bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat64bppBGRA) 
+		return GUID_WICPixelFormat64bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat64bppPRGBA)
+		return GUID_WICPixelFormat64bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat64bppPBGRA) 
+		return GUID_WICPixelFormat64bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat48bppRGBFixedPoint) 
+		return GUID_WICPixelFormat64bppRGBAHalf;
+	else if (wicFormatGUID == GUID_WICPixelFormat48bppBGRFixedPoint) 
+		return GUID_WICPixelFormat64bppRGBAHalf;
+	else if (wicFormatGUID == GUID_WICPixelFormat64bppRGBAFixedPoint) 
+		return GUID_WICPixelFormat64bppRGBAHalf;
+	else if (wicFormatGUID == GUID_WICPixelFormat64bppBGRAFixedPoint)
+		return GUID_WICPixelFormat64bppRGBAHalf;
+	else if (wicFormatGUID == GUID_WICPixelFormat64bppRGBFixedPoint) 
+		return GUID_WICPixelFormat64bppRGBAHalf;
+	else if (wicFormatGUID == GUID_WICPixelFormat64bppRGBHalf) 
+		return GUID_WICPixelFormat64bppRGBAHalf;
+	else if (wicFormatGUID == GUID_WICPixelFormat48bppRGBHalf) 
+		return GUID_WICPixelFormat64bppRGBAHalf;
+	else if (wicFormatGUID == GUID_WICPixelFormat128bppPRGBAFloat)
+		return GUID_WICPixelFormat128bppRGBAFloat;
+	else if (wicFormatGUID == GUID_WICPixelFormat128bppRGBFloat)
+		return GUID_WICPixelFormat128bppRGBAFloat;
+	else if (wicFormatGUID == GUID_WICPixelFormat128bppRGBAFixedPoint)
+		return GUID_WICPixelFormat128bppRGBAFloat;
+	else if (wicFormatGUID == GUID_WICPixelFormat128bppRGBFixedPoint)
+		return GUID_WICPixelFormat128bppRGBAFloat;
+	else if (wicFormatGUID == GUID_WICPixelFormat32bppRGBE) 
+		return GUID_WICPixelFormat128bppRGBAFloat;
+	else if (wicFormatGUID == GUID_WICPixelFormat32bppCMYK) 
+		return GUID_WICPixelFormat32bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat64bppCMYK)
+		return GUID_WICPixelFormat64bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat40bppCMYKAlpha) 
+		return GUID_WICPixelFormat64bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat80bppCMYKAlpha)
+		return GUID_WICPixelFormat64bppRGBA;
+
+#if (_WIN32_WINNT >= _WIN32_WINNT_WIN8) || defined(_WIN7_PLATFORM_UPDATE)
+	else if (wicFormatGUID == GUID_WICPixelFormat32bppRGB) 
+		return GUID_WICPixelFormat32bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat64bppRGB) 
+		return GUID_WICPixelFormat64bppRGBA;
+	else if (wicFormatGUID == GUID_WICPixelFormat64bppPRGBAHalf) 
+		return GUID_WICPixelFormat64bppRGBAHalf;
+#endif
+
+	else return GUID_WICPixelFormatDontCare;
+}
+
+int DirectX12Pipline::GetDXGIFormatBitsPerPixel(DXGI_FORMAT& dxgiFormat)
+{
+	if (dxgiFormat == DXGI_FORMAT_R32G32B32A32_FLOAT) 
+		return 128;
+	else if (dxgiFormat == DXGI_FORMAT_R16G16B16A16_FLOAT) 
+		return 64;
+	else if (dxgiFormat == DXGI_FORMAT_R16G16B16A16_UNORM) 
+		return 64;
+	else if (dxgiFormat == DXGI_FORMAT_R8G8B8A8_UNORM) 
+		return 32;
+	else if (dxgiFormat == DXGI_FORMAT_B8G8R8A8_UNORM) 
+		return 32;
+	else if (dxgiFormat == DXGI_FORMAT_B8G8R8X8_UNORM) 
+		return 32;
+	else if (dxgiFormat == DXGI_FORMAT_R10G10B10_XR_BIAS_A2_UNORM)
+		return 32;
+
+	else if (dxgiFormat == DXGI_FORMAT_R10G10B10A2_UNORM) 
+		return 32;
+	else if (dxgiFormat == DXGI_FORMAT_B5G5R5A1_UNORM) 
+		return 16;
+	else if (dxgiFormat == DXGI_FORMAT_B5G6R5_UNORM)
+		return 16;
+	else if (dxgiFormat == DXGI_FORMAT_R32_FLOAT)
+		return 32;
+	else if (dxgiFormat == DXGI_FORMAT_R16_FLOAT) 
+		return 16;
+	else if (dxgiFormat == DXGI_FORMAT_R16_UNORM)
+		return 16;
+	else if (dxgiFormat == DXGI_FORMAT_R8_UNORM) 
+		return 8;
+	else if (dxgiFormat == DXGI_FORMAT_A8_UNORM) 
+		return 8;
 }
