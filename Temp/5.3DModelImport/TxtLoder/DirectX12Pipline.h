@@ -49,8 +49,12 @@ private:
     //ID3D12Resource* pIndexBuffer;
     //D3D12_INDEX_BUFFER_VIEW indexBufferView;
 
-    CD3DX12_VIEWPORT viewport;
-    CD3DX12_RECT scissorRect;
+    //CD3DX12_VIEWPORT viewport;
+   // CD3DX12_RECT scissorRect;
+
+    D3D12_VIEWPORT viewport;
+    D3D12_RECT scissorRect;
+
 
     TxtLoder Model;
 

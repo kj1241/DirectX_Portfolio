@@ -5,8 +5,8 @@
 
 DirectX12Pipline::DirectX12Pipline() : pD3d12Device(nullptr), pCommandQueue(nullptr), pSwapChain(nullptr), pRtvHeap(nullptr), pRenderTargets{ nullptr }, pCommandAllocator(nullptr), pCommandList(nullptr), pFence(nullptr), hFenceEvent(nullptr), pPipelineState(nullptr), 
 pRootSignature(nullptr), pVertexBuffer(nullptr), //pIndexBuffer(nullptr),
-viewport(0.0f, 0.0f, 0.0f, 0.0f),
-scissorRect(0, 0, 0, 0),
+//viewport(0.0f, 0.0f, 0.0f, 0.0f),
+//scissorRect(0, 0, 0, 0),
 result(0), frameIndex(0), rtvDescriptorSize(0), fenceValue(0)
 {
 	GetAssetsPath(assetsPath, _countof(assetsPath));
@@ -21,6 +21,16 @@ void DirectX12Pipline::OnInit()
 	InitSize();
 	LoadPipeline();
 	LoadAssets();
+
+	viewport.TopLeftX = 0;
+	viewport.TopLeftY = 0;
+	viewport.Width = static_cast<float>(width);
+	viewport.Height = static_cast<float>(height);
+	viewport.MinDepth = 0.0f;
+	viewport.MaxDepth = 1.0f;
+
+	scissorRect = { 0, 0, (int)width, (int)height };
+
 }
 
 void DirectX12Pipline::OnUpdate()
